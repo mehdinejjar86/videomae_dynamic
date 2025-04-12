@@ -1,4 +1,4 @@
-# Un-Official PyTorch Implementation of VideoMAE (NeurIPS 2022 Spotlight).
+# Un-Official PyTorch Implementation of VideoMAE (NeurIPS 2022 Spotlight) with Grayscale Support & Dynamic Parameters Configurations.
 
 ![VideoMAE Framework](figs/videomae.jpg)
 
