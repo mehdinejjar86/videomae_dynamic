@@ -1,4 +1,4 @@
-# Official PyTorch Implementation of VideoMAE (NeurIPS 2022 Spotlight).
+# Un-Official PyTorch Implementation of VideoMAE (NeurIPS 2022 Spotlight).
 
 ![VideoMAE Framework](figs/videomae.jpg)
 
