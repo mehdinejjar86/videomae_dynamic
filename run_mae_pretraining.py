@@ -18,31 +18,38 @@ import modeling_pretrain
 
 def get_args():
     parser = argparse.ArgumentParser('VideoMAE pre-training script', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int)
-    parser.add_argument('--epochs', default=800, type=int)
-    parser.add_argument('--save_ckpt_freq', default=50, type=int)
+    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--epochs', default=5000, type=int)
+    parser.add_argument('--save_ckpt_freq', default=100, type=int)
 
     # Model parameters
-    parser.add_argument('--model', default='pretrain_videomae_base_patch16_224', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='pretrain_videomae_huge_patch16_224', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--decoder_depth', default=4, type=int,
                         help='depth of decoder')
 
-    parser.add_argument('--mask_type', default='tube', choices=['random', 'tube'],
+    parser.add_argument('--mask_type', default='frame', choices=['random', 'tube', 'frame'],
                         type=str, help='masked strategy of video tokens/patches')
+    
+    parser.add_argument('--tubelet_size', default=2, type=int,
+                        help='tubelet size of tube masking')
 
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='ratio of the visual tokens/patches need be masked')
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='videos input size for backbone')
+    
+    parser.add_argument('--patch_size', default=14, type=int,
+                        help='patch size for tubelet masking')
 
     parser.add_argument('--drop_path', type=float, default=0.0, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
                         
     parser.add_argument('--normlize_target', default=True, type=bool,
                         help='normalized the target patch pixels')
+    
 
     # Optimizer parameters
     parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
@@ -82,12 +89,12 @@ def get_args():
                         help='Training interpolation (random, bilinear, bicubic default: "bicubic")')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/path/to/list_kinetics-400', type=str,
+    parser.add_argument('--data_path', default='/home/nightstalker/Projects/capstone/VideoMAE/data/datasets/train.csv', type=str,
                         help='dataset path')
     parser.add_argument('--imagenet_default_mean_and_std', default=True, action='store_true')
     parser.add_argument('--num_frames', type=int, default= 16)
-    parser.add_argument('--sampling_rate', type=int, default= 4)
-    parser.add_argument('--output_dir', default='',
+    parser.add_argument('--sampling_rate', type=int, default= 1)
+    parser.add_argument('--output_dir', default='/home/nightstalker/Projects/capstone/VideoMAE/results/slice16-gray-frame-tub2-mask75-patch224',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default=None,
                         help='path where to tensorboard log')
@@ -98,6 +105,7 @@ def get_args():
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
     parser.set_defaults(auto_resume=True)
+    parser.add_argument('--grayscale', action='store_true', help='use grayscale')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -117,17 +125,25 @@ def get_args():
 
     return parser.parse_args()
 
-
 def get_model(args):
     print(f"Creating model: {args.model}")
+
+    in_chans = 1 if args.grayscale else 3
+    print(f"in_chans = {in_chans}")
+
     model = create_model(
         args.model,
         pretrained=False,
+        img_size=args.input_size,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
         decoder_depth=args.decoder_depth,
-        use_checkpoint=args.use_checkpoint
+        use_checkpoint=args.use_checkpoint,
+        tubelet_size=args.tubelet_size,
+        encoder_in_chans=in_chans,
+        patch_size=args.patch_size,
     )
+
     return model
 
 
@@ -148,8 +164,7 @@ def main(args):
     model = get_model(args)
     patch_size = model.encoder.patch_embed.patch_size
     print("Patch size = %s" % str(patch_size))
-    args.window_size = (args.num_frames // 2, args.input_size // patch_size[0], args.input_size // patch_size[1])
-    args.patch_size = patch_size
+    args.window_size = (args.num_frames // args.tubelet_size, args.input_size // patch_size[0], args.input_size // patch_size[1])
 
     # get dataset
     dataset_train = build_pretraining_dataset(args)
@@ -222,6 +237,7 @@ def main(args):
     torch.cuda.empty_cache()
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
+    best_loss = float('inf')
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -236,7 +252,24 @@ def main(args):
             wd_schedule_values=wd_schedule_values,
             patch_size=patch_size[0],
             normlize_target=args.normlize_target,
+            tubelet_size=args.tubelet_size,
+            grayscale=args.grayscale,
         )
+        current_loss = train_stats["loss"]  
+
+        if current_loss < best_loss:
+            best_loss = current_loss
+            # Save a special "best" checkpoint
+            if args.output_dir:
+                utils.save_model(
+                    args=args, 
+                    model=model, 
+                    model_without_ddp=model_without_ddp,
+                    optimizer=optimizer,
+                    loss_scaler=loss_scaler, 
+                    epoch=epoch,
+                    tag='best'   # You might have a custom arg or naming scheme
+                )
         if args.output_dir:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(

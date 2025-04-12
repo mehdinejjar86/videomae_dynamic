@@ -1,15 +1,20 @@
 import os
 from torchvision import transforms
 from transforms import *
-from masking_generator import TubeMaskingGenerator
+from masking_generator import TubeMaskingGenerator, FrameMaskingGenerator
 from kinetics import VideoClsDataset, VideoMAE
 from ssv2 import SSVideoClsDataset
 
 
 class DataAugmentationForVideoMAE(object):
     def __init__(self, args):
-        self.input_mean = [0.485, 0.456, 0.406]  # IMAGENET_DEFAULT_MEAN
-        self.input_std = [0.229, 0.224, 0.225]  # IMAGENET_DEFAULT_STD
+        if args.grayscale:
+            self.input_mean = [0.5]  # IMAGENET_DEFAULT_MEAN
+            self.input_std = [0.5]  # IMAGENET_DEFAULT_STD
+        else:
+            self.input_mean = [0.485, 0.456, 0.406]  # IMAGENET_DEFAULT_MEAN
+            self.input_std = [0.229, 0.224, 0.225]  # IMAGENET_DEFAULT_STD
+        
         normalize = GroupNormalize(self.input_mean, self.input_std)
         self.train_augmentation = GroupMultiScaleCrop(args.input_size, [1, .875, .75, .66])
         self.transform = transforms.Compose([                            
@@ -22,6 +27,12 @@ class DataAugmentationForVideoMAE(object):
             self.masked_position_generator = TubeMaskingGenerator(
                 args.window_size, args.mask_ratio
             )
+        elif args.mask_type == 'frame':
+            self.masked_position_generator = FrameMaskingGenerator(
+                args.window_size, args.mask_ratio
+            )
+        else:
+            raise ValueError('Mask type not supported')
 
     def __call__(self, images):
         process_data, _ = self.transform(images)
@@ -37,11 +48,15 @@ class DataAugmentationForVideoMAE(object):
 
 def build_pretraining_dataset(args):
     transform = DataAugmentationForVideoMAE(args)
+    if args.grayscale:
+        is_color = False
+    else:
+        is_color = True
     dataset = VideoMAE(
         root=None,
         setting=args.data_path,
         video_ext='mp4',
-        is_color=True,
+        is_color=is_color,
         modality='rgb',
         new_length=args.num_frames,
         new_step=args.sampling_rate,

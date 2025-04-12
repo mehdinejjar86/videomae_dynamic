@@ -487,8 +487,10 @@ class VideoMAE(torch.utils.data.Dataset):
 
         images = self._video_TSN_decord_batch_loader(directory, decord_vr, duration, segment_indices, skip_offsets)
 
+        num_channels = 3 if self.is_color else 1
+
         process_data, mask = self.transform((images, None)) # T*C,H,W
-        process_data = process_data.view((self.new_length, 3) + process_data.size()[-2:]).transpose(0,1)  # T*C,H,W -> T,C,H,W -> C,T,H,W
+        process_data = process_data.view((self.new_length, num_channels) + process_data.size()[-2:]).transpose(0,1)  # T*C,H,W -> T,C,H,W -> C,T,H,W
         
         return (process_data, mask)
 
@@ -550,7 +552,18 @@ class VideoMAE(torch.utils.data.Dataset):
                     offset += self.new_step
         try:
             video_data = video_reader.get_batch(frame_id_list).asnumpy()
-            sampled_list = [Image.fromarray(video_data[vid, :, :, :]).convert('RGB') for vid, _ in enumerate(frame_id_list)]
+
+            if self.is_color:
+                sampled_list = [
+                    Image.fromarray(video_data[vid]).convert('RGB')
+                    for vid, _ in enumerate(frame_id_list)
+                                ]
+            else:
+                sampled_list = [
+                    Image.fromarray(video_data[vid]).convert('L')
+                    for vid, _ in enumerate(frame_id_list)
+                                ]
+
         except:
             raise RuntimeError('Error occured in reading frames {} from video {} of duration {}.'.format(frame_id_list, directory, duration))
         return sampled_list

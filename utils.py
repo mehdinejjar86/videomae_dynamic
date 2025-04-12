@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import torch
 import torch.distributed as dist
-from torch._six import inf
+from torch import inf
 import random
 
 from tensorboardX import SummaryWriter
@@ -402,11 +402,15 @@ def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epoch
     return schedule
 
 
-def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):
+def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, model_ema=None, tag=None):
     output_dir = Path(args.output_dir)
     epoch_name = str(epoch)
     if loss_scaler is not None:
-        checkpoint_paths = [output_dir / ('checkpoint-%s.pth' % epoch_name)]
+        if tag is not None:
+            checkpoint_paths = [output_dir / ('checkpoint-%s.pth' % tag)]
+        else:
+            checkpoint_paths = [output_dir / ('checkpoint-%s.pth' % epoch_name)]
+        
         for checkpoint_path in checkpoint_paths:
             to_save = {
                 'model': model_without_ddp.state_dict(),
@@ -424,7 +428,11 @@ def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, mo
         client_state = {'epoch': epoch}
         if model_ema is not None:
             client_state['model_ema'] = get_state_dict(model_ema)
-        model.save_checkpoint(save_dir=args.output_dir, tag="checkpoint-%s" % epoch_name, client_state=client_state)
+        if tag is not None:
+            print("Saving Best Model")
+            model.save_checkpoint(save_dir=args.output_dir, tag=tag, client_state=client_state)
+        else:
+            model.save_checkpoint(save_dir=args.output_dir, tag="checkpoint-%s" % epoch_name, client_state=client_state)
 
 
 def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):

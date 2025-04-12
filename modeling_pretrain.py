@@ -114,11 +114,16 @@ class PretrainVisionTransformerDecoder(nn.Module):
     """
     def __init__(self, patch_size=16, num_classes=768, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
                  qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
-                 norm_layer=nn.LayerNorm, init_values=None, num_patches=196, tubelet_size=2, use_checkpoint=False
+                 norm_layer=nn.LayerNorm, init_values=None, num_patches=196, tubelet_size=2, in_chans=3, use_checkpoint=False
                  ):
         super().__init__()
-        self.num_classes = num_classes
-        assert num_classes == 3 * tubelet_size * patch_size ** 2 
+        self.num_classes = in_chans * tubelet_size * patch_size ** 2
+        print(f"num_classes = {self.num_classes}")
+        print(f"in_chans = {in_chans}")
+        print(f"tubelet_size = {tubelet_size}")
+        num_classes = self.num_classes
+        assert self.num_classes == in_chans * tubelet_size * patch_size ** 2 
+
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.patch_size = patch_size
         self.use_checkpoint = use_checkpoint
@@ -241,6 +246,7 @@ class PretrainVisionTransformer(nn.Module):
             norm_layer=norm_layer, 
             init_values=init_values,
             tubelet_size=tubelet_size,
+            in_chans=encoder_in_chans,
             use_checkpoint=use_checkpoint)
 
         self.encoder_to_decoder = nn.Linear(encoder_embed_dim, decoder_embed_dim, bias=False)
@@ -286,13 +292,11 @@ class PretrainVisionTransformer(nn.Module):
 @register_model
 def pretrain_videomae_small_patch16_224(pretrained=False, **kwargs):
     model = PretrainVisionTransformer(
-        img_size=224,
-        patch_size=16,
         encoder_embed_dim=384,
         encoder_depth=12,
         encoder_num_heads=6,
         encoder_num_classes=0,
-        decoder_num_classes=1536, 
+        decoder_num_classes=512, 
         decoder_embed_dim=192, 
         decoder_num_heads=3,
         mlp_ratio=4,
@@ -310,8 +314,6 @@ def pretrain_videomae_small_patch16_224(pretrained=False, **kwargs):
 @register_model
 def pretrain_videomae_base_patch16_224(pretrained=False, **kwargs):
     model = PretrainVisionTransformer(
-        img_size=224,
-        patch_size=16, 
         encoder_embed_dim=768, 
         encoder_depth=12, 
         encoder_num_heads=12,
@@ -334,8 +336,6 @@ def pretrain_videomae_base_patch16_224(pretrained=False, **kwargs):
 @register_model
 def pretrain_videomae_large_patch16_224(pretrained=False, **kwargs):
     model = PretrainVisionTransformer(
-        img_size=224,
-        patch_size=16, 
         encoder_embed_dim=1024, 
         encoder_depth=24, 
         encoder_num_heads=16,
@@ -358,8 +358,6 @@ def pretrain_videomae_large_patch16_224(pretrained=False, **kwargs):
 @register_model
 def pretrain_videomae_huge_patch16_224(pretrained=False, **kwargs):
     model = PretrainVisionTransformer(
-        img_size=224,
-        patch_size=16, 
         encoder_embed_dim=1280, 
         encoder_depth=32, 
         encoder_num_heads=16,
